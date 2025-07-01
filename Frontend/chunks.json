@@ -1,0 +1,92 @@
+[
+  {
+    "chunk_start": 0,
+    "chunk_end": 30,
+    "text": "C'est quoi l'intelligence artificielle ?Salut, alors moi je me suis penché sur cette histoire d'intelligence artificielle.C'est passionnant.J'ai enquêté, j'ai parlé avec des spécialistes, des chercheuses, des chercheurs,j'ai lu des articles, j'ai assisté à des conférences, j'ai creusé, j'ai pioché,je suis allé jusque dans la tombe du pharaon, en bref, je suis allé au bout du bout."
+  },
+  {
+    "chunk_start": 30,
+    "chunk_end": 60,
+    "text": "je suis allé jusque dans la tombe du pharaon, en bref, je suis allé au bout du bout.Attention, c'est du sérieux.D'ailleurs, on a pensé à vous, puisqu'on vous a mis toutes les sources.Comme ça, vous pourrez aller vérifier par vous-même et surtout creuser les sujets qui vous intéressent.D'accord ? Alors c'est parti, allons-y.Histoire d'algorithmeLes algorithmes sont partout autour de nous.Recommandation de contenu sur Facebook ? Algorithme.Localisation GPS qui m'informe des embouteillages ? Algorithme."
+  },
+  {
+    "chunk_start": 60,
+    "chunk_end": 90,
+    "text": "Localisation GPS qui m'informe des embouteillages ? Algorithme.Reconnaissance des visages ?Algorithme.Bien.Oui, mais les algorithmes, c'est quoi en fait ?Alors commençons par le commencement, l'informatique.L'informatique a pour objet le traitement de l'information de manière automatique, d'où son nom.Elle s'appuie sur des machines capables de traiter des données grâce à des...Algorithmes.Bien Théo ! C'est bien ça ! Tu suis, ça fait plaisir !Maintenant, les algorithmes, arrêtez-moi si je me trompe, c'est un petit peu comme...Une recette de cuisine.C'est une série d'instructions à suivre dans un certain ordre pour effectuer une tâche de manière automatique."
+  },
+  {
+    "chunk_start": 90,
+    "chunk_end": 120,
+    "text": "C'est une série d'instructions à suivre dans un certain ordre pour effectuer une tâche de manière automatique.Qui dit de manière automatique, dit sans avoir besoin de comprendre ou de réfléchir.Et c'est parfait pour une machine.Une fois qu'on a cette liste d'instructions, on la traduit en langage compréhensible par un ordinateuret on obtient...Un programme informatique.Les ordinateurs exécutent parfaitement et très rapidement tout programme qui décrit un algorithme.Et c'est très puissant.D'ailleurs, dans les années 50, les chercheurs se sont mis à rêver.Ils ont imaginé des algorithmes qui rendraient les ordinateurs aussi intelligents que l'humain."
+  },
+  {
+    "chunk_start": 120,
+    "chunk_end": 150,
+    "text": "Ils ont imaginé des algorithmes qui rendraient les ordinateurs aussi intelligents que l'humain.Comme l'explique Nicolas Rougier, chercheur Enria,il y a eu de belles avancées jusqu'à la fin des années 70.Puis on a déchanté.Les résultats promis n'arrivaient pas.Les fonds pour la recherche ont cessé d'affluer et on a connu un premier hiver de l'IA.Dix ans plus tard, on connaît un sursaut avec les systèmes expertsqui tentent de reproduire le raisonnement d'un spécialiste comme un médecin.Mais il fallait entrer les connaissances des hommes dans les machinesalors que ce qu'on voulait, c'était que les machines apprennent toutes seules."
+  },
+  {
+    "chunk_start": 150,
+    "chunk_end": 180,
+    "text": "alors que ce qu'on voulait, c'était que les machines apprennent toutes seules.Un deuxième hiver de l'IA se produit.À la fin des années 90, coup de tonnerre.Dibloo, le super ordinateur d'IBM, bat le champion du monde d'échecs, Garry Kasparov.Et en 2016, nouveau coup de tonnerre,un algorithme de Google bat un des meilleurs joueurs du monde de Goalors que l'on n'imaginait pas ça possible avant plusieurs années.En fait, l'histoire de l'intelligence artificielleest une alternance de progrès très médiatique mais aussi de grosses déceptions.Là, nous sommes de nouveau en phase de boom."
+  },
+  {
+    "chunk_start": 180,
+    "chunk_end": 210,
+    "text": "Là, nous sommes de nouveau en phase de boom.Mais nos ordinateurs, ils sont devenus intelligents ou pas ?Ah, mais il faudrait clairement comprendre et définir ce qu'est l'intelligence biologiquepour pouvoir définir en regard l'intelligence artificielle.Avant, être un excellent joueur d'échecs était une manifestation d'intelligence.Aujourd'hui, ça ne suffit plus puisque la machine le fait mécaniquement.En fait, la définition de l'intelligence biologique suit l'évolution de l'intelligence artificielle.Et c'est passionnant comme question.Alors je vais tenter, toute proportion gardée,"
+  },
+  {
+    "chunk_start": 210,
+    "chunk_end": 240,
+    "text": "Alors je vais tenter, toute proportion gardée,de vous expliquer aujourd'hui en 2020 ce qu'est l'intelligence biologique.Intelligence biologiqueEn même temps que l'intelligence artificielle,sont nées les sciences cognitives qui étudient l'intelligence humaine.Elles ont permis d'identifier les différents mécanismesqui sont à l'œuvre dans le fonctionnement de la pensée.Cette pensée qui nous permet de percevoir,de parler, de bouger, de mémoriser, de raisonner,de planifier, de faire preuve d'abstraction parfois,ou de créativité pour les meilleurs d'entre nous."
+  },
+  {
+    "chunk_start": 240,
+    "chunk_end": 270,
+    "text": "ou de créativité pour les meilleurs d'entre nous.Ce sont nos fonctions cognitives.Pour simuler l'intelligence humaine,l'idée était de reproduire les fonctions cognitives.Pour y parvenir, les chercheurs ont privilégié deux approchesqui sont un peu à l'image de notre façon d'apprendre.Soit par la transmission de connaissances,soit par tâtonnement à partir de l'observation du monde et de l'expérimentation.Les deux sont complémentaires.L'approche symbolique essaye d'imiter comment l'humain résonne logiquementet utilise ses connaissances.Comme nous l'explique Talita Firmo Drummond,"
+  },
+  {
+    "chunk_start": 270,
+    "chunk_end": 300,
+    "text": "Comme nous l'explique Talita Firmo Drummond,docteur Antin Ria,un certain nombre de savoirs nous sont transmis par un ensemble de connaissances,de règles, de procédures.C'est la manière privilégiée par les savoirs scolaires,comme apprendre à poser une addition, par exemple.Lorsque je pose une addition, je peux expliquer comment je m'y prends étape par étape.Il est donc ensuite possible d'écrire un programmeexpliquant à la machine comment procéder étape par étape.La machine pourra ensuite l'exécuter beaucoup plus rapidement que moiet sans étourderie.Cette approche a donné les systèmes experts"
+  },
+  {
+    "chunk_start": 300,
+    "chunk_end": 330,
+    "text": "Cette approche a donné les systèmes expertsqui essayent de reproduire le raisonnement d'un spécialiste,comme un médecin ou un juriste,pour résoudre un problème.C'est cette approche-là qui a eu le vent en poupe dans les années 80.D'autres savoirs naissent de l'expérience,pour lesquelles il est beaucoup plus difficile d'expliquer comment on s'y prend,comme par exemple faire du vélo ou reconnaître un chat.J'aurais beau vous expliquer comment faire du vélo,c'est en pédalant que vous saurez pédaler.Il faut que vous en fassiez l'expérience.Ça, c'est l'autre approche,l'approche numérique ou connexionniste,qui, elle, tente d'imiter comment l'humain apprend par essai et erreur"
+  },
+  {
+    "chunk_start": 330,
+    "chunk_end": 360,
+    "text": "qui, elle, tente d'imiter comment l'humain apprend par essai et erreurà partir de ses expériences.C'est cette approche-là qui est sur le devant de la scène aujourd'hui.Vous savez, l'apprentissage machine et les fameux réseaux de neurones.Ok, mais tu n'as toujours pas répondu à la vraie question.C'est quoi l'intelligence ?L'intelligence biologique ?Oh, mais j'y viens !Alors, Frédéric Alexandre, qui est chercheur en neurosciences computationnelles,nous donne les éléments de réponse suivants.Être intelligent, c'est savoir répondre rapidement à une situation complexe.Être intelligent, c'est trouver la réponse satisfaisante"
+  },
+  {
+    "chunk_start": 360,
+    "chunk_end": 390,
+    "text": "Être intelligent, c'est trouver la réponse satisfaisanteplutôt que la réponse optimale.Être intelligent, c'est savoir trouver ce qui est important dans une information.Être intelligent, c'est savoir s'adapter si les conditions changentou réagir à une situation imprévue.Et tout ça en utilisant une stratégie caractéristique du vivantqui mélange émotion, motivation, créativité.La force et la spécificité de l'intelligence biologiqueque n'a pas l'intelligence artificielle,c'est la complémentarité de ses aspects émotionnels et logiques."
+  },
+  {
+    "chunk_start": 390,
+    "chunk_end": 420,
+    "text": "c'est la complémentarité de ses aspects émotionnels et logiques.Ouais, du bon sens quoi.Si tu veux.En fait, pour éviter les fantasmes véhiculés par l'intelligence généraledont on est loin,il vaudrait mieux parler d'intelligence artificielle au pluriel.Toutes les intelligences artificielles que nous croisons dans la vraie viene sont juste que très techniques et très spécifiques.Elles ne peuvent faire que la tâchepour laquelle elles ont été programmées ou paramétrées.Un programme qui bat le champion du monde d'échecsne sait pas reconnaître un canard !En revanche, pour une tâche précise,"
+  },
+  {
+    "chunk_start": 420,
+    "chunk_end": 450,
+    "text": "En revanche, pour une tâche précise,elles sont ultra performantes.Et souvent, meilleures que nous.Ces dernières années, l'intelligence artificielleest de nouveau rentrée dans une phase de développement exponentielle.C'est grâce à l'augmentation des données disponibles,à la puissance de calcul des ordinateurs,mais aussi à l'optimisation des algorithmes, bien entendu.Les programmes de reconnaissance vocale ou d'image,ou de traduction dont on se moquait encore il y a quelques années, souvenez-vous,"
+  },
+  {
+    "chunk_start": 450,
+    "chunk_end": 480,
+    "text": "ou de traduction dont on se moquait encore il y a quelques années, souvenez-vous,fonctionnent désormais d'une manière qui peut être bluffante,grâce à l'apprentissage automatique.L'intelligence artificielle est sortie des laboratoires.Elle infuse et impacte désormais tous les domaines de la société.De la finance à l'agriculture,en passant par la médecine ou l'éducation,jusqu'à nos maisons.Dans notre monde devenu numérique,nous fréquentons et utilisons chaque jour sans le savoirde l'intelligence artificielle dans nos objets du quotidien.Appareils photos,mécanismes de recommandation sur les réseaux sociaux,enceintes connectées."
+  },
+  {
+    "chunk_start": 480,
+    "chunk_end": 510,
+    "text": "Un monde d'algorithmes.Mais c'est bien nous, humains,qui devons décider de ce que les systèmes peuvent faire pour nous,et non l'inverse.Et comme ces technologies façonnent profondément notre société,il est fondamental de comprendre comment elles marchent.comme ces technologies en ameaux sociaux,et en remettrisse,on sont choisi�造umble dans nos objets Almost가지minas,en amés,« est très très peu de remplacement de la société »on peut pas monter au niveau du quotidien.É neige avoir un suivi.Les technologies comment les WOWitudespeuvent faire pour nous,et condimatar en on se Cameron"
+  },
+  {
+    "chunk_start": 510,
+    "chunk_end": 540,
+    "text": "et condimatar en on se Cameronoffre les marches �광 Teachers,pour des dernières 되는데 insины,en cause de mal�� tadi,"
+  }
+]

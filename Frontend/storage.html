@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Storage with Edit Functionality</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="storage.css">
+</head>
+<body>
+<div class="page-container">
+  <!-- Header -->
+  <nav class="top-header">
+    <div class="logo-container">
+      <div class="logo-icon">
+        <i class="fas fa-waveform"></i>
+      </div>
+      <div class="logo-text">Audio To Text</div>
+    </div>
+    <div class="right-section">
+      <a class="nav-link" href="#">Home</a>
+      <a class="nav-link" href="#">Features</a>
+      <a class="nav-link" href="#">Transcript Search</a>
+      <a class="nav-link" href="#">FAQs</a>
+      <a class="nav-link" href="#">About</a>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="centered-section">
+    <div class="upload-container">
+      <div id="dragDropArea" class="drag-drop-area" style="display:none;">
+        <button class="drag-drop-close-btn" title="Close" aria-label="Close" style="position:absolute;top:10px;right:10px;z-index:30;"><i class="fas fa-times"></i></button>
+        <div class="drag-drop-content">
+          <i class="fas fa-cloud-upload-alt" style="font-size:2.5rem;color:var(--primary);"></i>
+          <div class="drag-drop-text">Upload from device<br><span style='font-size:0.95em;color:#64748b;'>or drag & drop video here</span></div>
+        </div>
+      </div>
+      <button class="upload-button" id="uploadBtn">
+        <i class="fas fa-cloud-upload-alt"></i>
+        Upload Video
+      </button>
+      <input type="file" id="videoInput" accept="video/*" style="display: none;"/>
+    </div>
+
+    <div class="video-grid" id="videoGrid"></div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-content">
+      <p>&copy; 2025 Audio to Text. All rights reserved.</p>
+    </div>
+  </footer>
+</div>
+
+<script type="module" src="transcriptProcessing.js" defer></script>
+<script type="module" src="main.js" defer></script>
+<script type="module" src = "utilities.js" defer></script>
+<script type="module" src="progressBarController.js" defer></script>
+<script type="module" src="chatController.js" defer></script>
+<script type="module" src="headerHandler.js" defer></script>
+</body>
+</html>
