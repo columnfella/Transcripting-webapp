@@ -17,30 +17,23 @@
       </div>
       <div class="logo-text">Audio To Text</div>
     </div>
-    <div class="right-section">
-      <a class="nav-link" href="#">Home</a>
-      <a class="nav-link" href="#">Features</a>
-      <a class="nav-link" href="#">Transcript Search</a>
-      <a class="nav-link" href="#">FAQs</a>
-      <a class="nav-link" href="#">About</a>
-    </div>
   </nav>
 
   <!-- Main Content -->
   <div class="centered-section">
     <div class="upload-container">
-      <div id="dragDropArea" class="drag-drop-area" style="display:none;">
-        <button class="drag-drop-close-btn" title="Close" aria-label="Close" style="position:absolute;top:10px;right:10px;z-index:30;"><i class="fas fa-times"></i></button>
+      <div id="dragDropArea" class="drag-drop-area" style="display:none;" role="region" aria-label="Drag and drop upload area">
+        <button class="drag-drop-close-btn" title="Close" aria-label="Close" style="position:absolute;top:12px;right:12px;z-index:30;"><i class="fas fa-times" aria-hidden="true"></i></button>
         <div class="drag-drop-content">
-          <i class="fas fa-cloud-upload-alt" style="font-size:2.5rem;color:var(--primary);"></i>
+          <i class="fas fa-cloud-upload-alt" style="font-size:2.6rem;color:var(--primary);" aria-hidden="true"></i>
           <div class="drag-drop-text">Upload from device<br><span style='font-size:0.95em;color:#64748b;'>or drag & drop video here</span></div>
         </div>
       </div>
-      <button class="upload-button" id="uploadBtn">
-        <i class="fas fa-cloud-upload-alt"></i>
-        Upload Video
+      <button class="upload-button" id="uploadBtn" aria-label="Upload Video">
+        <i class="fas fa-cloud-upload-alt" aria-hidden="true"></i>
+        <span>Upload Video</span>
       </button>
-      <input type="file" id="videoInput" accept="video/*" style="display: none;"/>
+      <input type="file" id="videoInput" accept="video/*" aria-label="Video file input" style="display: none;"/>
     </div>
 
     <div class="video-grid" id="videoGrid"></div>

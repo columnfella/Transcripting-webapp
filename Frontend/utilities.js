@@ -1,11 +1,18 @@
 import {addMessage, showLoadingMessage} from "./chatController.js";
 import {findWordInstances} from "./transcriptProcessor.js";
-import {updateProgressBarWithQuery} from "./progressBarController.js";
+import {updateProgressBarWithQuery, createIntervalDensityMarkers} from "./progressBarController.js";
 
 console.log("Utilities module loaded");
 
 // Global variable for detailed transcript and video
 export let detailedTranscriptBundle = null;
+
+// Global variable to track current chat type
+export let currentChatType = 'main';
+
+export function setCurrentChatType(type) {
+    currentChatType = type;
+}
 
 export function _dispatchLogEvent(ev) {
     window.dispatchEvent(ev);
@@ -15,6 +22,9 @@ export function _dispatchLogEvent(ev) {
 export function clearTextBox(textBox) {
     textBox.value = "";
 }
+
+// Translated transcripts are cached in detailedTranscriptBundle as translatedTranscript_fr or translatedTranscript_eng.
+// handleMessageSend uses the transcriptOverride parameter for searching in the correct transcript.
 
 // DEBUG VERSION FOR ASYNC VIDEO UPLOAD FLOW
 export function sendVideo(file, videoTitle) {
@@ -62,86 +72,372 @@ export function sendVideo(file, videoTitle) {
 
 let isProcessing = false;
 
-export function handleMessageSend(input, systemReply = true) {
+export async function handleMessageSend(input, systemReply = true, chatType = currentChatType, transcriptOverride = null) {
     const text = input.value.trim();
     if (!text) return;
     if (isProcessing) {
         alert("Please wait until the current request is finished.");
         return;
     }
+    const chatHistoryId = chatType === 'alt' ? 'chatHistoryAlt' : 'chatHistory';
+    const chatContainer = document.getElementById(chatHistoryId);
+    
+    // Add user message
+    addMessage(text, 'user', chatHistoryId);
+    
+    // Scroll to bottom after adding user message
+    if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    
+    if (chatType === 'alt') {
+        // Contextual chat: call backend and show response
+        isProcessing = true;
+        const loading = showLoadingMessage(undefined, chatHistoryId);
+        try {
+            const response = await sendContextualChatMessage(text);
+            loading.stop();
+            loading.element.remove();
+            const responseText = response.answer || 'No response received from the system.';
+            addMessage(responseText, 'system', chatHistoryId);
+        } catch (error) {
+            if (loading) {
+                loading.stop();
+                loading.element.remove();
+            }
+            addMessage(`Error: ${error.answer || 'Unknown error occurred'}`, 'system', chatHistoryId);
+        } finally {
+            if (chatContainer) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+            isProcessing = false;
+        }
+        return;
+    }
+    
     isProcessing = true;
-    addMessage(text, 'user');
-    const loading = showLoadingMessage();
+    const loading = showLoadingMessage(undefined, chatHistoryId);
     // Only search in the loaded transcript, do not request from backend
-    const transcriptToUse = detailedTranscriptBundle?.transcript;
-    if (!transcriptToUse || !transcriptToUse.words || !Array.isArray(transcriptToUse.words) || transcriptToUse.words.length === 0) {
+    const transcriptToUse = transcriptOverride || detailedTranscriptBundle?.transcript;
+    if (!transcriptToUse) {
         loading.stop();
         loading.element.remove();
-        addMessage("No transcript loaded. Please load a video first.", 'system');
+        addMessage("No transcript loaded. Please load a video first.", 'system', chatHistoryId);
+        if (chatContainer) {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
         isProcessing = false;
         return;
     }
+    
+    // Check if we're dealing with a translated transcript (30-second chunks) or regular transcript (word-level)
+    const isTranslatedTranscript = transcriptToUse.words && Array.isArray(transcriptToUse.words) && 
+                                  transcriptToUse.words.length > 0 && 'start' in transcriptToUse.words[0] && 
+                                  'end' in transcriptToUse.words[0] && 'text' in transcriptToUse.words[0];
+    
+    if (!isTranslatedTranscript && (!transcriptToUse.words || !Array.isArray(transcriptToUse.words) || transcriptToUse.words.length === 0)) {
+        loading.stop();
+        loading.element.remove();
+        addMessage("Transcript has no searchable content.", 'system', chatHistoryId);
+        if (chatContainer) {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+        isProcessing = false;
+        return;
+    }
+    
     if (systemReply) {
         setTimeout(() => {
             loading.stop();
             try {
-                let instanceResults = findWordInstances(transcriptToUse, text);
-                if (!Array.isArray(instanceResults) || instanceResults.length === 0) {
-                    loading.element.remove();
-                    addMessage("No match was found.", 'system');
-                    isProcessing = false;
-                    return;
+                let instanceResults = [];
+                let totalInstances = 0;
+                
+                // Handle different transcript formats
+                if (isTranslatedTranscript) {
+                    // Search in 30-second chunks for translated transcript
+                    const intervals = searchInTranslatedChunks(transcriptToUse.words, text);
+                    totalInstances = intervals.reduce((sum, interval) => sum + interval.count, 0);
+                    instanceResults = intervals;
+                } else {
+                    // Regular word-level search
+                    instanceResults = findWordInstances(transcriptToUse, text);
+                    totalInstances = instanceResults.length;
                 }
-                const totalInstances = instanceResults.length;
+                
                 if (totalInstances === 0) {
                     loading.element.remove();
-                    addMessage("No match was found.", 'system');
+                    addMessage("No match was found.", 'system', chatHistoryId);
+                    if (chatContainer) {
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }
                     isProcessing = false;
                     return;
                 }
-                updateProgressBarWithQuery(text, detailedTranscriptBundle.transcript);
+                // Always clear existing interval density markers first
+                const progressBar = document.getElementById('progressBar');
+                if (progressBar) {
+                    const bar = progressBar.querySelector('.plain-progress-bar');
+                    if (bar) {
+                        bar.querySelectorAll('.interval-density-marker').forEach(marker => marker.remove());
+                    }
+                }
+                
+                // Always clear ALL existing markers first, regardless of transcript type
+                const progressBarElement = document.getElementById('progressBar');
+                if (progressBarElement) {
+                    const bar = progressBarElement.querySelector('.plain-progress-bar');
+                    if (bar) {
+                        bar.querySelectorAll('.progress-marker, .contextual-marker, .interval-density-marker').forEach(marker => marker.remove());
+                    }
+                }
+                
+                if (isTranslatedTranscript) {
+                    // For translated transcripts, use interval density markers
+                    const video = detailedTranscriptBundle?.video;
+                    const videoDuration = video?.duration || (video?.duration_formatted ? (
+                        typeof video.duration_formatted === 'string' && video.duration_formatted.includes(':')
+                            ? video.duration_formatted.split(':').reduce((acc, t) => 60 * acc + +t, 0)
+                            : parseFloat(video.duration_formatted)
+                    ) : 0);
+                    
+                    // Store the current query in the intervals for highlighting in the modal
+                    instanceResults.forEach(interval => {
+                        interval.query = text;
+                    });
+                    
+                    createIntervalDensityMarkers(instanceResults, videoDuration);
+                } else {
+                    // For regular transcripts, use the standard progress bar markers
+                    updateProgressBarWithQuery(text, transcriptToUse);
+                }
+                
                 loading.element.remove();
+                
                 // --- Custom: Add Show Details button and details logic ---
                 const msg = `Found ${totalInstances} instance${totalInstances !== 1 ? 's' : ''} of "${text}".`;
-                const messageDiv = addMessage(msg, 'system');
+                const messageDiv = addMessage(msg, 'system', chatHistoryId);
+                
                 // Create Show Details button
                 const detailsBtn = document.createElement('button');
                 detailsBtn.textContent = 'Show Details';
-                detailsBtn.style.marginTop = '8px';
+                detailsBtn.style.marginTop = '12px';
                 detailsBtn.style.display = 'block';
-                detailsBtn.style.background = '#2563eb';
+                detailsBtn.style.background = 'linear-gradient(135deg, #3b82f6, #1e40af)';
                 detailsBtn.style.color = 'white';
                 detailsBtn.style.border = 'none';
-                detailsBtn.style.borderRadius = '6px';
-                detailsBtn.style.padding = '6px 16px';
+                detailsBtn.style.borderRadius = '8px';
+                detailsBtn.style.padding = '8px 18px';
                 detailsBtn.style.fontSize = '0.95rem';
+                detailsBtn.style.fontWeight = '500';
                 detailsBtn.style.cursor = 'pointer';
                 detailsBtn.style.marginLeft = 'auto';
                 detailsBtn.style.marginRight = 'auto';
+                detailsBtn.style.boxShadow = '0 2px 10px rgba(37, 99, 235, 0.2)';
+                detailsBtn.style.transition = 'all 0.2s ease';
+                
+                // Add hover effects for the button
+                detailsBtn.addEventListener('mouseenter', () => {
+                    detailsBtn.style.background = 'linear-gradient(135deg, #2563eb, #1e3a8a)';
+                    detailsBtn.style.transform = 'translateY(-1px)';
+                    detailsBtn.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.25)';
+                });
+                detailsBtn.addEventListener('mouseleave', () => {
+                    detailsBtn.style.background = 'linear-gradient(135deg, #3b82f6, #1e40af)';
+                    detailsBtn.style.transform = 'translateY(0px)';
+                    detailsBtn.style.boxShadow = '0 2px 10px rgba(37, 99, 235, 0.2)';
+                });
+                
                 // Details container (hidden by default)
                 const detailsDiv = document.createElement('div');
                 detailsDiv.style.display = 'none';
-                detailsDiv.style.marginTop = '10px';
-                detailsDiv.style.background = 'linear-gradient(135deg, #2563eb22 60%, #1e40af11 100%)';
-                detailsDiv.style.border = '2px solid #2563eb';
+                detailsDiv.style.marginTop = '12px';
+                detailsDiv.style.background = 'linear-gradient(145deg, #3b82f620 0%, #60a5fa25 100%)';
+                detailsDiv.style.border = '1px solid #60a5fa';
                 detailsDiv.style.borderRadius = '12px';
-                detailsDiv.style.padding = '14px 18px 14px 18px';
-                detailsDiv.style.fontSize = '1.01rem';
+                detailsDiv.style.padding = '16px 20px';
+                detailsDiv.style.fontSize = '1rem';
                 detailsDiv.style.color = '#1e293b';
-                detailsDiv.style.boxShadow = '0 2px 12px rgba(30,64,175,0.10)';
+                detailsDiv.style.boxShadow = '0 4px 16px rgba(37, 99, 235, 0.15)';
                 detailsDiv.style.fontFamily = 'Segoe UI, Roboto, Arial, sans-serif';
-                detailsDiv.style.maxHeight = '220px';
+                detailsDiv.style.maxHeight = '240px';
                 detailsDiv.style.overflowY = 'auto';
                 detailsDiv.style.marginLeft = 'auto';
                 detailsDiv.style.marginRight = 'auto';
                 detailsDiv.style.width = '95%';
-                // Build details list
-                let html = '<b style="color:#2563eb;">Instances:</b><ul style="margin:10px 0 0 0;padding-left:22px;">';
-                instanceResults.forEach((inst, idx) => {
-                    html += `<li style='margin-bottom:6px;'><span style='font-weight:600;color:#fff;'>${inst.word}</span> <span style='color:#64748b;'>at</span> <span style='color:#2563eb;font-weight:600;'>${formatDuration(inst.start)}</span></li>`;
-                });
-                html += '</ul>';
+                detailsDiv.style.scrollbarWidth = 'thin';
+                detailsDiv.style.scrollbarColor = '#cbd5e1 transparent';
+                
+                // Modern details section with improved styling
+                let html = `<div style="padding:10px 0;background:linear-gradient(145deg, #60a5fa20 0%, #3b82f625 100%);border-radius:10px;">
+                    <div style="display:flex;align-items:center;justify-content:center;margin-bottom:16px;padding-top:10px;">
+                        <div style="background:#93c5fd;border-radius:10px;padding:8px 16px;display:inline-flex;align-items:center;box-shadow:0 2px 8px rgba(37,99,235,0.15);">
+                            <span style="color:#1e3a8a;font-weight:700;font-size:1.15rem;margin-right:6px;">${totalInstances}</span> 
+                            <span style="color:#1e3a8a;font-size:0.95rem;">instance${totalInstances !== 1 ? 's' : ''} of</span> 
+                            <span style="color:white;font-weight:600;background:#3b82f6;padding:3px 8px;border-radius:6px;margin-left:6px;font-size:0.95rem;">"${text}"</span>
+                        </div>
+                    </div>
+                    <div id="interval-buttons-container" style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:16px;background:rgba(147, 197, 253, 0.5);padding:12px;border-radius:12px;border:1px solid #60a5fa;backdrop-filter:blur(2px);"></div>
+                    <div id="instance-list-container" style="margin-top:16px;"></div>
+                </div>`;
+                
                 detailsDiv.innerHTML = html;
+                
+                // Add interval buttons for translated transcript
+                if (isTranslatedTranscript && Array.isArray(instanceResults) && instanceResults.length > 0) {
+                    const buttonsContainer = detailsDiv.querySelector('#interval-buttons-container');
+                    if (buttonsContainer) {
+                        instanceResults.forEach((interval, idx) => {
+                            if (interval.count > 0) {
+                                const button = document.createElement('button');
+                                button.className = 'interval-view-btn';
+                                button.style.background = '#f0f7ff';
+                                button.style.border = '1px solid #d0e1fc';
+                                button.style.borderRadius = '10px';
+                                button.style.padding = '10px 16px';
+                                button.style.fontSize = '0.9rem';
+                                button.style.color = '#334155';
+                                button.style.cursor = 'pointer';
+                                button.style.display = 'flex';
+                                button.style.alignItems = 'center';
+                                button.style.gap = '8px';
+                                button.style.transition = 'all 0.2s ease';
+                                button.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.08)';
+                                
+                                // Create button content with modern styling
+                                button.innerHTML = `
+                                    <div style="display:flex;align-items:center;justify-content:center;background:#bfdbfe;border-radius:50%;width:26px;height:26px;flex-shrink:0;">
+                                        <span style="color:#1e40af;font-weight:700;font-size:0.85rem;">${interval.count}</span>
+                                    </div>
+                                    <span style="color:#1e40af;font-size:0.85rem;">at</span>
+                                    <span style="color:#2563eb;font-weight:600;display:flex;align-items:center;">
+                                        <i class="fas fa-clock" style="color:#1e40af;margin-right:5px;font-size:0.8rem;"></i>
+                                        ${formatDuration(interval.start)}
+                                    </span>
+                                    <i class="fas fa-search" style="color:white;margin-left:4px;font-size:0.8rem;background:#3b82f6;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:50%;"></i>
+                                `;
+                                
+                                // Enhanced hover effect
+                                button.addEventListener('mouseenter', () => {
+                                    button.style.background = '#e6f0ff';
+                                    button.style.borderColor = '#93c5fd';
+                                    button.style.transform = 'translateY(-2px)';
+                                    button.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.15)';
+                                });
+                                
+                                button.addEventListener('mouseleave', () => {
+                                    button.style.background = '#f0f7ff';
+                                    button.style.borderColor = '#d0e1fc';
+                                    button.style.transform = 'translateY(0)';
+                                    button.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.08)';
+                                });
+                                
+                                // Click to show modal
+                                button.addEventListener('click', () => {
+                                    // Import the showTranslatedChunkModal function from progressBarController.js
+                                    if (typeof window.showTranslatedChunkModal === 'function') {
+                                        window.showTranslatedChunkModal(interval, text);
+                                    } else {
+                                        // Fallback if the function is not available
+                                        const video = document.getElementById('videoPlayer');
+                                        if (video) {
+                                            video.currentTime = interval.start;
+                                            video.play().catch(e => console.warn('Could not autoplay:', e));
+                                        }
+                                    }
+                                });
+                                
+                                buttonsContainer.appendChild(button);
+                            }
+                        });
+                    }
+                } 
+                // Display individual instances with timestamps for regular transcript
+                else if (!isTranslatedTranscript && Array.isArray(instanceResults) && instanceResults.length > 0) {
+                    const instanceListContainer = detailsDiv.querySelector('#instance-list-container');
+                    if (instanceListContainer) {
+                        // Create a more detailed list for regular transcript instances
+                        const instancesList = document.createElement('div');
+                        instancesList.style.display = 'flex';
+                        instancesList.style.flexDirection = 'column';
+                        instancesList.style.gap = '10px';
+                        instancesList.style.padding = '10px';
+                        instancesList.style.background = 'rgba(147, 197, 253, 0.5)';
+                        instancesList.style.borderRadius = '12px';
+                        instancesList.style.border = '1px solid #60a5fa';
+                        instancesList.style.backdropFilter = 'blur(2px)';
+                        
+                        instanceResults.forEach((instance, idx) => {
+                            if (instance && instance.word && instance.start !== undefined) {
+                                const instanceItem = document.createElement('div');
+                                instanceItem.style.display = 'flex';
+                                instanceItem.style.alignItems = 'center';
+                                instanceItem.style.padding = '10px 14px';
+                                instanceItem.style.borderRadius = '10px';
+                                instanceItem.style.background = '#e6f0ff';
+                                instanceItem.style.border = '1px solid #bfdbfe';
+                                instanceItem.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.12)';
+                                instanceItem.style.transition = 'all 0.2s ease';
+                                
+                                // Format timestamp as clickable link
+                                const timestamp = formatDuration(instance.start);
+                                instanceItem.innerHTML = `
+                                    <div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;background:#dbeafe;border-radius:50%;margin-right:12px;flex-shrink:0;">
+                                        <span style="color:#1e40af;font-weight:600;font-size:0.85rem;">${idx + 1}</span>
+                                    </div>
+                                    <span style="flex-grow:1;color:#334155;font-size:0.95rem;">Found at </span>
+                                    <a href="#" class="timestamp-link" style="color:#2563eb;text-decoration:underline;font-weight:600;cursor:pointer;font-size:0.95rem;background:#dbeafe;padding:4px 10px;border-radius:6px;display:inline-flex;align-items:center;text-decoration:none;border:1px solid #93c5fd;" 
+                                       data-time="${instance.start}">
+                                       <i class="fas fa-play" style="font-size:0.8rem;margin-right:6px;"></i>${timestamp}
+                                    </a>
+                                `;
+                                
+                                // Add hover effect to the entire item
+                                instanceItem.addEventListener('mouseenter', () => {
+                                    instanceItem.style.transform = 'translateY(-2px)';
+                                    instanceItem.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.2)';
+                                    instanceItem.style.borderColor = '#60a5fa';
+                                    instanceItem.style.background = '#eff6ff';
+                                });
+                                
+                                instanceItem.addEventListener('mouseleave', () => {
+                                    instanceItem.style.transform = 'translateY(0)';
+                                    instanceItem.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.12)';
+                                    instanceItem.style.borderColor = '#bfdbfe';
+                                    instanceItem.style.background = '#e6f0ff';
+                                });
+                                
+                                instancesList.appendChild(instanceItem);
+                            }
+                        });
+                        
+                        // Add click event listeners to timestamp links
+                        instanceListContainer.appendChild(instancesList);
+                        const timestampLinks = instanceListContainer.querySelectorAll('.timestamp-link');
+                        timestampLinks.forEach(link => {
+                            link.addEventListener('click', (e) => {
+                                e.preventDefault();
+                                const time = parseFloat(link.dataset.time);
+                                const video = document.getElementById('videoPlayer');
+                                if (video && !isNaN(time)) {
+                                    video.currentTime = time;
+                                    video.play().catch(e => console.warn('Could not autoplay:', e));
+                                }
+                            });
+                            
+                            // Add hover effect
+                            link.addEventListener('mouseenter', () => {
+                                link.style.background = '#bfdbfe';
+                                link.style.borderColor = '#60a5fa';
+                            });
+                            
+                            link.addEventListener('mouseleave', () => {
+                                link.style.background = '#dbeafe';
+                                link.style.borderColor = '#93c5fd';
+                            });
+                        });
+                    }
+                }
                 // Toggle logic
                 detailsBtn.addEventListener('click', () => {
                     if (detailsDiv.style.display === 'none') {
@@ -155,11 +451,16 @@ export function handleMessageSend(input, systemReply = true) {
                 // Append button and details to message
                 messageDiv.appendChild(detailsBtn);
                 messageDiv.appendChild(detailsDiv);
-                // --- End custom ---
+                if (chatContainer) {
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
                 isProcessing = false;
             } catch (error) {
                 loading.element.remove();
-                addMessage("Invalid search query. Please use only letters, spaces, and basic accented characters.", 'system');
+                addMessage("Invalid search query. Please use only letters, spaces, and basic accented characters.", 'system', chatHistoryId);
+                if (chatContainer) {
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
                 isProcessing = false;
                 console.warn('Search processing failed:', error.message);
             }
@@ -497,6 +798,9 @@ function formatDuration(seconds) {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+// Make formatDuration available globally for other modules
+window.formatDuration = formatDuration;
+
 // Update previewTranscript to preview PDF with interval selection
 export async function previewTranscript(video) {
     try {
@@ -592,33 +896,105 @@ export async function sendEditVideoTitle(videoId, newTitle) {
     }
 }
 
-// IMPROVED CONFIRMATION DIALOG WITH COLOR SCHEME
+// ENHANCED CONFIRMATION DIALOG WITH MODERN STYLING
 export function showConfirmDialog(message, confirmText = 'Confirm', cancelText = 'Cancel') {
     return new Promise((resolve) => {
         const modal = document.createElement('div');
-        modal.className = 'modal-backdrop';
+        modal.className = 'modal-backdrop confirm-backdrop';
+        modal.style = `
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(15, 23, 42, 0.35);
+            backdrop-filter: blur(8px);
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        `;
+        
         modal.innerHTML = `
-          <div class="confirm-dialog" style="background: #f9fafb; border-radius: 12px; padding: 32px 32px 24px 32px; min-width: 340px; max-width: 400px; box-shadow: 0 8px 32px rgba(30,64,175,0.10); text-align: center; border: 1.5px solid #3b82f6;">
-            <div class="confirm-icon" style="font-size: 40px; color: #3b82f6; margin-bottom: 12px;"><i class="fas fa-exclamation-triangle"></i></div>
-            <h2 class="confirm-title" style="margin: 0 0 12px 0; color: #1e40af; font-size: 1.1rem; font-weight: 600;">Confirm Action</h2>
-            <p class="confirm-message" style="margin: 0 0 20px 0; color: #374151; font-size: 1rem; line-height: 1.5;">${message}</p>
-            <div class="modal-buttons" style="display: flex; gap: 18px; justify-content: center; margin-top: 18px;">
-              <button class="modal-btn cancel-btn" style="background: #e0e7ef; color: #1e40af; border-radius: 6px; padding: 10px 22px; font-size: 1rem; border: 1px solid #cbd5e1;">${cancelText}</button>
-              <button class="modal-btn confirm-btn" style="background: #3b82f6; color: white; border-radius: 6px; padding: 10px 22px; font-size: 1rem; border: 1px solid #2563eb;">${confirmText}</button>
+          <div class="confirm-dialog" style="background: #f9fafb; border-radius: 16px; padding: 35px 35px 28px 35px; min-width: 360px; max-width: 420px; box-shadow: 0 15px 40px rgba(0,0,0,0.25), 0 0 0 1px rgba(30,64,175,0.15); text-align: center; border: 1.5px solid #3b82f6; position: relative; transform: translateY(30px); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); opacity: 0;">
+            <div class="confirm-icon" style="font-size: 42px; color: #3b82f6; margin-bottom: 16px;"><i class="fas fa-exclamation-triangle"></i></div>
+            <h2 class="confirm-title" style="margin: 0 0 14px 0; color: #1e40af; font-size: 1.2rem; font-weight: 600; text-shadow: 0 1px 1px rgba(255,255,255,0.5);">Confirm Action</h2>
+            <p class="confirm-message" style="margin: 0 0 22px 0; color: #374151; font-size: 1rem; line-height: 1.6;">${message}</p>
+            <div class="modal-buttons" style="display: flex; gap: 20px; justify-content: center; margin-top: 20px;">
+              <button class="modal-btn cancel-btn" style="background: linear-gradient(to bottom, #f1f5f9, #e2e8f0); color: #1e40af; border-radius: 10px; padding: 12px 24px; font-size: 1rem; font-weight: 600; border: 1px solid #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.5); transition: all 0.3s ease;">${cancelText}</button>
+              <button class="modal-btn confirm-btn" style="background: linear-gradient(to bottom, #3b82f6, #2563eb); color: white; border-radius: 10px; padding: 12px 24px; font-size: 1rem; font-weight: 600; border: 1px solid #2563eb; box-shadow: 0 2px 10px rgba(37,99,235,0.35), inset 0 1px 0 rgba(255,255,255,0.2); text-shadow: 0 1px 1px rgba(0,0,0,0.2); transition: all 0.3s ease;">${confirmText}</button>
             </div>
           </div>
         `;
+        
         document.body.appendChild(modal);
+        
+        // Trigger animation after a short delay
+        setTimeout(() => {
+            modal.style.opacity = '1';
+            const dialog = modal.querySelector('.confirm-dialog');
+            if (dialog) {
+                dialog.style.transform = 'translateY(0)';
+                dialog.style.opacity = '1';
+            }
+        }, 10);
+        
         const confirmBtn = modal.querySelector('.confirm-btn');
         const cancelBtn = modal.querySelector('.cancel-btn');
-        confirmBtn.addEventListener('click', () => { modal.remove(); resolve(true); });
-        cancelBtn.addEventListener('click', () => { modal.remove(); resolve(false); });
-        modal.addEventListener('click', (e) => { if (e.target === modal) { modal.remove(); resolve(false); } });
+        
+        // Add hover effects
+        confirmBtn.addEventListener('mouseenter', () => {
+            confirmBtn.style.transform = 'translateY(-2px)';
+            confirmBtn.style.boxShadow = '0 4px 15px rgba(37,99,235,0.45), inset 0 1px 0 rgba(255,255,255,0.25)';
+        });
+        confirmBtn.addEventListener('mouseleave', () => {
+            confirmBtn.style.transform = '';
+            confirmBtn.style.boxShadow = '0 2px 10px rgba(37,99,235,0.35), inset 0 1px 0 rgba(255,255,255,0.2)';
+        });
+        
+        cancelBtn.addEventListener('mouseenter', () => {
+            cancelBtn.style.transform = 'translateY(-2px)';
+            cancelBtn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.6)';
+        });
+        cancelBtn.addEventListener('mouseleave', () => {
+            cancelBtn.style.transform = '';
+            cancelBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.5)';
+        });
+        
+        // Fade out animation function
+        const fadeOut = () => {
+            const dialog = modal.querySelector('.confirm-dialog');
+            if (dialog) {
+                dialog.style.transform = 'translateY(20px)';
+                dialog.style.opacity = '0';
+            }
+            modal.style.opacity = '0';
+            setTimeout(() => {
+                modal.remove();
+            }, 300);
+        };
+        
+        confirmBtn.addEventListener('click', () => { 
+            fadeOut();
+            setTimeout(() => resolve(true), 300);
+        });
+        
+        cancelBtn.addEventListener('click', () => { 
+            fadeOut();
+            setTimeout(() => resolve(false), 300);
+        });
+        
+        modal.addEventListener('click', (e) => { 
+            if (e.target === modal) {
+                fadeOut();
+                setTimeout(() => resolve(false), 300);
+            } 
+        });
+        
         document.addEventListener('keydown', function escapeHandler(e) {
             if (e.key === 'Escape') {
-                modal.remove();
+                fadeOut();
                 document.removeEventListener('keydown', escapeHandler);
-                resolve(false);
+                setTimeout(() => resolve(false), 300);
             }
         });
     });
@@ -706,39 +1082,78 @@ export function showNamePrompt(videoId = null, currentTitle = '') {
 }
 
 export function showNotification(message, type = 'info') {
+    // Create notification element
     const notification = document.createElement('div');
-    notification.textContent = message;
-    notification.style.position = 'fixed';
-    notification.style.bottom = '20px';
-    notification.style.right = '20px';
-    notification.style.padding = '14px 24px';
-    notification.style.color = 'white';
-    notification.style.borderRadius = '10px';
-    notification.style.zIndex = '1000';
-    notification.style.boxShadow = '0 6px 20px rgba(0,0,0,0.25)';
-    notification.style.animation = 'fadeIn 0.3s, fadeOut 0.3s 2.7s';
-
-    // Set background color based on type
+    
+    // Create icon based on notification type
+    const icon = document.createElement('i');
+    icon.style.marginRight = '10px';
+    icon.style.fontSize = '18px';
+    
+    // Create message container
+    const messageSpan = document.createElement('span');
+    messageSpan.textContent = message;
+    
+    // Add icon based on type
     switch (type) {
         case 'success':
-            notification.style.backgroundColor = '#10b981';
+            icon.className = 'fas fa-check-circle';
+            notification.style.background = 'linear-gradient(135deg, #10b981, #059669)';
             break;
         case 'error':
-            notification.style.backgroundColor = '#ef4444';
+            icon.className = 'fas fa-exclamation-circle';
+            notification.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
             break;
         case 'warning':
-            notification.style.backgroundColor = '#f59e0b';
+            icon.className = 'fas fa-exclamation-triangle';
+            notification.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
             break;
         default:
-            notification.style.backgroundColor = '#1e40af';
+            icon.className = 'fas fa-info-circle';
+            notification.style.background = 'linear-gradient(135deg, #3b82f6, #1e40af)';
     }
-
+    
+    // Append icon and message
+    notification.appendChild(icon);
+    notification.appendChild(messageSpan);
+    
+    // Style notification
+    notification.style.position = 'fixed';
+    notification.style.bottom = '25px';
+    notification.style.right = '25px';
+    notification.style.padding = '16px 24px';
+    notification.style.color = 'white';
+    notification.style.borderRadius = '12px';
+    notification.style.zIndex = '1000';
+    notification.style.boxShadow = '0 8px 25px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1)';
+    notification.style.display = 'flex';
+    notification.style.alignItems = 'center';
+    notification.style.fontWeight = '500';
+    notification.style.fontSize = '15px';
+    notification.style.border = '1px solid rgba(255,255,255,0.1)';
+    notification.style.backdropFilter = 'blur(5px)';
+    notification.style.textShadow = '0 1px 1px rgba(0,0,0,0.2)';
+    notification.style.maxWidth = '90vw';
+    notification.style.transform = 'translateY(100px)';
+    notification.style.opacity = '0';
+    notification.style.transition = 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+    
     document.body.appendChild(notification);
-
-    // Remove notification after animation
+    
+    // Trigger animation
     setTimeout(() => {
-        notification.remove();
-    }, 3000);
+        notification.style.transform = 'translateY(0)';
+        notification.style.opacity = '1';
+    }, 10);
+    
+    // Remove notification after delay
+    setTimeout(() => {
+        notification.style.transform = 'translateY(30px)';
+        notification.style.opacity = '0';
+        setTimeout(() => {
+            notification.remove();
+        }, 500);
+    }, 3500);
 }
 
 // LOAD THUMBNAIL FUNCTION
@@ -915,4 +1330,140 @@ export async function loadDetailedSearchVideo(videoId) {
     } else {
         console.warn('[loadDetailedSearchVideo] videoPlayer element not found or video filename missing:', videoPlayer, video && video.filename);
     }
+}
+
+// --- CONTEXTUAL CHAT PLACEHOLDER FUNCTION ---
+export async function sendContextualChatMessage(message) {
+    // Placeholder: send message and language to arbitrary endpoint and return response
+    try {
+        const res = await fetch('http://10.0.0.162:5000/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ "question": message })
+        });
+        
+        // Handle specific HTTP status codes
+        if (res.status === 404) {
+            return { answer: 'Error: The contextual chat service is not available (404 Not Found). Please check if the backend server is running.' };
+        }
+        
+        if (!res.ok) {
+            // Try to get more details from the error response
+            try {
+                const errorData = await res.json();
+                return { answer: `Error: ${errorData.error || `Server returned ${res.status} ${res.statusText}`}` };
+            } catch (parseError) {
+                return { answer: `Error: Server returned ${res.status} ${res.statusText}` };
+            }
+        }
+        
+        const data = await res.json();
+        return data; // Return the full JSON object
+    } catch (err) {
+        if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
+            return { answer: 'Error: Could not connect to the server. Please check if the backend is running.' };
+        }
+        return { answer: 'Error: ' + (err.message || 'Unknown error occurred') };
+    }
+}
+// --- END CONTEXTUAL CHAT PLACEHOLDER ---
+
+// send the transcription to contextual server function
+
+export async function sendTranscriptionToContextualServer(transcription) {
+    try {
+        const res = await fetch('http://10.0.0.162:5000/transcription', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcription })
+        });
+        if (!res.ok) {
+            const errorData = await res.json();
+            return { answer: `Error: ${errorData.error || `Server returned ${res.status} ${res.statusText}`}` };
+        }
+        const data = await res.json();
+        return data; // Return the full JSON object
+    } catch (err) {
+        if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
+            return { answer: 'Error: Could not connect to the server. Please check if the backend is running.' };
+        }
+        return { answer: 'Error: ' + (err.message || 'Unknown error occurred') };
+    }
+}
+
+// Fetch the language of a video's transcript from the backend
+export async function fetchVideoLanguage(videoId) {
+    try {
+        const res = await fetch(`http://127.0.0.1:5000/video-language/${videoId}`);
+        if (!res.ok) throw new Error('Failed to fetch video language');
+        const data = await res.json();
+        
+        // Normalize language code to match our UI options
+        let normalizedLanguage = 'eng'; // Default fallback
+        
+        if (data.language) {
+            // Check for common French language codes (fr, fra, fre, français, etc.)
+            const frenchCodes = ['fr', 'fra', 'fre', 'français', 'french'];
+            if (frenchCodes.includes(data.language.toLowerCase())) {
+                normalizedLanguage = 'fr';
+            } else {
+                // Any other language codes default to English for now
+                normalizedLanguage = 'eng';
+            }
+        }
+        
+        console.log('Fetched video language:', data.language, '→ Normalized to:', normalizedLanguage);
+        return normalizedLanguage;
+    } catch (err) {
+        console.warn('Error fetching video language:', err);
+        return 'eng'; // Default to English on error
+    }
+}
+
+// Translate the transcript to the target language if needed
+export async function translateTranscript(videoId, targetLang) {
+    try {
+        const res = await fetch(`http://127.0.0.1:5000/translate-transcript/${videoId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_lang: targetLang })
+        });
+        if (!res.ok) throw new Error('Failed to translate transcript');
+        // Always return the full translated_transcript object (with 'chunks')
+        return await res.json();
+    } catch (err) {
+        console.warn('Error translating transcript:', err);
+        return null;
+    }
+}
+
+export function searchInTranslatedChunks(translatedChunks, query) {
+    if (!Array.isArray(translatedChunks) || !query || typeof query !== 'string') return [];
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const intervals = [];
+    
+    // Make sure query is safe for regex
+    const safeQuery = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    for (const chunk of translatedChunks) {
+        if (!chunk || typeof chunk.text !== 'string') continue;
+        
+        // Count matches (case-insensitive, substring)
+        const regex = new RegExp(safeQuery, 'gi');
+        const matches = chunk.text.match(regex);
+        const count = matches ? matches.length : 0;
+        
+        if (count > 0) {
+            intervals.push({
+                start: chunk.start,
+                end: chunk.end,
+                count,
+                text: chunk.text // Include the text for display in tooltips
+            });
+        }
+    }
+    
+    console.log(`Found ${intervals.length} intervals with matches for "${q}"`);
+    return intervals;
 }

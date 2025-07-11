@@ -37,12 +37,6 @@
                 </div>
                 <div class="logo-text"><span class="top-header-title-span">Audio To Text</span></div>
             </div>
-            <div class="right-section">
-                <a class="nav-link" href="#">Home</a>
-                <a class="nav-link" href="#">Features</a>
-                <a class="nav-link" href="#">FAQs</a>
-                <a class="nav-link" href="#">About</a>
-            </div>
         </nav>
         <div class="centered-section">
             <div class="main-layout">
@@ -55,18 +49,37 @@
                     </div>
                 </div>
                 <div class="chat-area">
-                    <div class="chat-actions" style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:4px;">
-                        <button id="clearChatBtn" class="chat-action-btn" title="Clear chat" style="background:transparent;border:none;cursor:pointer;padding:4px 8px;"><i class="fas fa-trash"></i></button>
-                        <button id="clearProgressBtn" class="chat-action-btn" title="Clear progress bar" style="background:transparent;border:none;cursor:pointer;padding:4px 8px;"><i class="fas fa-sliders-h"></i></button>
+                    <div class="chat-type-toggle" id="chatTypeToggle">
+                        <button class="chat-type-btn active" data-chat="main" title="Search and analyze transcript">
+                            <i class="fas fa-search"></i> 
+                            <span>Querying</span>
+                        </button>
+                        <button class="chat-type-btn" data-chat="alt" title="Chat with AI about the content">
+                            <i class="fas fa-comments"></i> 
+                            <span>Contextual</span>
+                        </button>
                     </div>
-                    <div class="chat-history" id="chatHistory"></div>
-                    <div class="input-area">
-                        <div class="language-toggle">
-                            <button class="lang-button" id="fr">FR</button>
-                            <button class="lang-button active" id="eng">ENG</button>
+                    <div class="chat-actions">
+                        <button id="clearChatBtn" class="chat-action-btn" title="Clear chat history">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                        <button id="clearProgressBtn" class="chat-action-btn" title="Clear progress markers">
+                            <i class="fas fa-sliders-h"></i>
+                        </button>
+                        <div class="language-toggle" id="languageToggle" aria-label="Querying language" title="Querying language">
+                            <button id="eng" class="lang-button active" type="button"><span>ENG</span></button>
+                            <button id="fr" class="lang-button" type="button"><span>FR</span></button>
                         </div>
-                        <input id="chat-input" class="chat-input" type="text" placeholder="Type input here..." />
-                        <button id="send-button" class="send-button" title="Send">
+                    </div>
+                    <div class="chat-history active" id="chatHistory">
+                        <!-- Chat messages will appear here -->
+                    </div>
+                    <div class="chat-history" id="chatHistoryAlt">
+                        <!-- Contextual chat messages will appear here -->
+                    </div>
+                    <div class="input-area">
+                        <input id="chat-input" class="chat-input" type="text" placeholder="Type your message here..." />
+                        <button id="send-button" class="send-button" title="Send message">
                             <svg viewBox="0 0 24 24" fill="none" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
                             </svg>
@@ -81,10 +94,11 @@
             </div>
         </footer>
     </div>
-    <script type="module" src="transcriptProcessing.js" defer></script>
-    <script type="module" src="main.js" defer></script>
-    <script type="module" src="utilities.js" defer></script>
-    <script type="module" src="progressBarController.js" defer></script>
+    <!-- Load the JavaScript modules in the correct order -->
     <script type="module" src="chatController.js"></script>
+    <script type="module" src="transcriptProcessor.js"></script>
+    <script type="module" src="progressBarController.js"></script>
+    <script type="module" src="utilities.js"></script>
+    <script type="module" src="main.js"></script>
 </body>
 </html>

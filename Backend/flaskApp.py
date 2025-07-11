@@ -1,14 +1,19 @@
 import os
 import json
-import random
 from datetime import datetime, timezone
+from shlex import quote
 from typing import Optional
 from flask import Flask, request, jsonify, send_from_directory, Response, make_response, after_this_request
 from flask_cors import CORS
-import cv2
 import logging
+import re
+import time
+from word2word import Word2word
+import requests
 from pdfgen import generate_pdf_for_video
 from video_utils import delete_video, VideoNotFoundError
+from utils import *
+from deep_translator import GoogleTranslator
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -115,178 +120,6 @@ def add_cors_headers(response):
     return response
 
 
-def check_groq():
-    """Check if Groq package is available"""
-    try:
-        import groq
-        return True
-    except ImportError:
-        return False
-
-
-def extract_video_metadata(video_path):
-    """
-    Extract video metadata using OpenCV
-    Returns dict with duration, resolution, etc.
-    """
-    try:
-        cap = cv2.VideoCapture(video_path)
-
-        if not cap.isOpened():
-            return {'error': 'Could not open video file'}
-
-        # Get video properties
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        # Calculate duration
-        duration = frame_count / fps if fps > 0 else 0
-
-        cap.release()
-
-        return {
-            'duration': duration,
-            'resolution': f"{width}x{height}",
-            'fps': fps,
-            'frame_count': frame_count
-        }
-
-    except Exception as e:
-        logger.error(f"{Colors.RED}Error extracting metadata: {str(e)}{Colors.END}")
-        return {'error': str(e)}
-
-
-def format_duration(seconds):
-    """Format duration in seconds to HH:MM:SS or MM:SS format"""
-    try:
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-
-        if hours > 0:
-            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-        else:
-            return f"{minutes:02d}:{secs:02d}"
-    except:
-        return "00:00"
-
-
-def transcribe_video(video_path):
-    """
-    Transcribe video using Groq API - works directly with video files
-    """
-    try:
-        # Check if Groq is installed
-        try:
-            from groq import Groq
-        except ImportError:
-            return {
-                'error': 'Groq package not installed. Please install it with: pip install groq'
-            }
-
-        # Initialize Groq client
-        GROQ_API_KEY = "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"  # Replace with your actual API key
-
-        if GROQ_API_KEY == "YOUR_GROQ_API_KEY_HERE":
-            return {
-                'error': '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'
-            }
-
-        client = Groq(api_key=GROQ_API_KEY)
-
-        # Transcribe video directly using Groq (no FFmpeg needed!)
-        with open(video_path, 'rb') as video_file:
-            transcription = client.audio.transcriptions.create(
-                file=video_file,
-                model="whisper-large-v3-turbo",
-                response_format="verbose_json",
-                timestamp_granularities=["word", "segment"],
-                temperature=0.0
-            )
-
-        # Convert to dict if it's a Pydantic model
-        if hasattr(transcription, 'model_dump'):
-            transcript_data = transcription.model_dump()
-        else:
-            transcript_data = transcription
-
-        logger.info(
-            f"{Colors.GREEN}✅ Transcription successful: {Colors.BOLD}{len(transcript_data.get('text', ''))}{Colors.END}{Colors.GREEN} characters{Colors.END}")
-
-        return transcript_data
-
-    except Exception as e:
-        logger.error(f"{Colors.RED}Transcription error: {str(e)}{Colors.END}")
-        return {'error': f'Transcription failed: {str(e)}'}
-
-
-def generate_thumbnail(video_path, video_id):
-    """
-    Generate a thumbnail from a random frame of the video
-    Returns the thumbnail filename or None if failed
-    """
-    try:
-        # Open video file
-        cap = cv2.VideoCapture(video_path)
-
-        if not cap.isOpened():
-            logger.error(f"Could not open video file: {video_path}")
-            return None
-
-        # Get total frame count
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        if total_frames <= 0:
-            logger.error(f"Invalid frame count for video: {video_path}")
-            cap.release()
-            return None
-
-        # Choose a random frame (avoid first and last 10% of frames for better thumbnails)
-        start_frame = int(total_frames * 0.1)
-        end_frame = int(total_frames * 0.9)
-        random_frame = random.randint(start_frame, end_frame) if start_frame < end_frame else total_frames // 2
-
-        # Set frame position
-        cap.set(cv2.CAP_PROP_POS_FRAMES, random_frame)
-
-        # Read the frame
-        ret, frame = cap.read()
-        cap.release()
-
-        if not ret or frame is None:
-            logger.error(f"Could not read frame {random_frame} from video: {video_path}")
-            return None
-
-        # Generate thumbnail filename
-        thumbnail_filename = f"thumb_{video_id}.jpg"
-        thumbnail_path = os.path.join(THUMBNAILS_FOLDER, thumbnail_filename)
-
-        # Resize frame to thumbnail size (e.g., 320x180 for 16:9 aspect ratio)
-        height, width = frame.shape[:2]
-        thumbnail_width = 320
-        thumbnail_height = int((thumbnail_width * height) / width)
-
-        # Resize the frame
-        thumbnail = cv2.resize(frame, (thumbnail_width, thumbnail_height), interpolation=cv2.INTER_AREA)
-
-        # Save thumbnail
-        success = cv2.imwrite(thumbnail_path, thumbnail, [cv2.IMWRITE_JPEG_QUALITY, 85])
-
-        if success:
-            logger.info(
-                f"{Colors.GREEN}Generated thumbnail: {Colors.BOLD}{thumbnail_filename}{Colors.END}{Colors.GREEN} from frame {random_frame}{Colors.END}")
-            return thumbnail_filename
-        else:
-            logger.error(f"{Colors.RED}Failed to save thumbnail: {thumbnail_path}{Colors.END}")
-            return None
-
-    except Exception as e:
-        logger.error(f"{Colors.RED}Error generating thumbnail for {video_path}: {str(e)}{Colors.END}")
-        return None
-
-
 @app.route('/upload-video', methods=['POST'])
 def handle_video_file():
     if 'video' not in request.files:
@@ -326,7 +159,7 @@ def handle_video_file():
         formatted_duration = format_duration(meta['duration'])
 
         # Generate thumbnail
-        thumbnail_filename = generate_thumbnail(save_path, new_id)
+        thumbnail_filename = generate_thumbnail(save_path, new_id, THUMBNAILS_FOLDER)
         if thumbnail_filename:
             logger.info(f"{Colors.GREEN}🖼️  Thumbnail generated: {Colors.BOLD}{thumbnail_filename}{Colors.END}")
         else:
@@ -341,6 +174,8 @@ def handle_video_file():
                 f"{Colors.YELLOW}⚠️  Transcription failed for {new_filename}: {transcript['error']}{Colors.END}")
             transcript_text = "Transcription failed"
             transcript_data = transcript  # Keep the full error info
+            detected_language = 'eng'
+            translated_transcript = {}
         else:
             # Extract actual transcript text
             transcript_text = transcript.get('text', '')
@@ -352,6 +187,65 @@ def handle_video_file():
                 'text': transcript_text,
                 'words': transcript.get('words', []),
                 'segments': transcript.get('segments', [])
+            }
+
+            # --- Language Detection ---
+            lang = detect_transcript_language(transcript_text)
+            if lang.startswith('fr'):
+                detected_language = 'fr'
+            elif lang.startswith('en'):
+                detected_language = 'eng'
+            else:
+                detected_language = 'eng'
+            logger.info(f"{Colors.CYAN}Detected language: {detected_language}{Colors.END}")
+
+            # --- Split and translate transcript into 30-second chunks ---
+            logger.info(f"{Colors.BLUE}Splitting and translating transcript into 30-second chunks using deep-translator...{Colors.END}")
+            segments = transcript.get('segments', [])
+            interval = 30.0
+            chunked_translated = []
+            if segments:
+                max_time = max(seg.get('end', 0) for seg in segments)
+                num_intervals = int(max_time // interval) + 1
+                for i in range(num_intervals):
+                    chunk_start = i * interval
+                    chunk_end = (i + 1) * interval
+                    chunk_segs = [seg for seg in segments if seg.get('start', 0) >= chunk_start and seg.get('end', 0) <= chunk_end]
+                    chunk_text = ' '.join(seg.get('text', '') for seg in chunk_segs)
+                    if chunk_text.strip():
+                        try:
+                            translated_chunk_text = GoogleTranslator(source='auto', target='fr' if detected_language == 'eng' else 'en').translate(chunk_text)
+                            logger.debug(f"{Colors.GREEN}Chunk {i+1}: {chunk_start:.2f}-{chunk_end:.2f} translated.{Colors.END}")
+                        except Exception as e:
+                            logger.warning(f"{Colors.YELLOW}Chunk {i+1} translation failed: {str(e)}{Colors.END}")
+                            translated_chunk_text = chunk_text
+                        chunked_translated.append({
+                            'start': chunk_start,
+                            'end': chunk_end,
+                            'text': translated_chunk_text
+                        })
+            else:
+                logger.warning(f"{Colors.YELLOW}No segments found; using one big chunk for translation.{Colors.END}")
+                try:
+                    translated_chunk_text = GoogleTranslator(source='auto', target='fr' if detected_language == 'eng' else 'en').translate(transcript_text)
+                except Exception as e:
+                    logger.warning(f"{Colors.YELLOW}Fallback chunk translation failed: {str(e)}{Colors.END}")
+                    translated_chunk_text = transcript_text
+                chunked_translated.append({
+                    'start': 0,
+                    'end': 1e9,
+                    'text': translated_chunk_text
+                })
+            logger.info(f"{Colors.GREEN}All chunks translated. Total chunks: {len(chunked_translated)}{Colors.END}")
+
+            # Join all chunk texts to form the translated 'text' field
+            translated_text = ' '.join(chunk['text'] for chunk in chunked_translated)
+            logger.info(f"{Colors.GREEN}Joined all chunk texts for translated 'text' field. Length: {len(translated_text)}{Colors.END}")
+
+            # Build translated transcript structure
+            translated_transcript = {
+                'text': translated_text,
+                'words': chunked_translated
             }
 
         # Generate PDF after transcript
@@ -376,7 +270,9 @@ def handle_video_file():
             'size_mb': size_mb,
             'duration_formatted': formatted_duration,
             'transcript': transcript_data,  # Store structured transcript data
-            'pdffile': pdf_filename  # Add PDF file name
+            'pdffile': pdf_filename,  # Add PDF file name
+            'language': detected_language,  # Store detected language
+            'translated_transcript': translated_transcript  # Store translated transcript
         })
 
         data['total_uploads'] = new_id
@@ -523,7 +419,7 @@ def edit_video_title():
         logger.info(f"{Colors.GREEN}Title updated for video ID {video_id}: '{new_title}'{Colors.END}")
         return jsonify({'message': 'Title updated successfully'})
     except Exception as e:
-        logger.error(f"{Colors.RED}Error updating title for video {video_id}: {str(e)}{Colors.END}")
+        logger.error(f"{Colors.RED}Error updating title for diddddiiii {video_id}: {str(e)}{Colors.END}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -569,6 +465,55 @@ def generate_pdf_for_interval(video_id):
     logger.info(f"{Colors.GREEN}Interval PDF generated for video {video_id} ({start}-{end}s): {pdf_filename}{Colors.END}")
     return jsonify({'pdffile': pdf_filename})
 
+@app.route('/translate-transcript/<video_id>', methods=['POST'])
+def translate_transcript(video_id):
+    logger.info(f"{Colors.CYAN}Received translate-transcript request for video ID {video_id}{Colors.END}")
+    try:
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
+            meta = json.load(f)
+            video = next((v for v in meta['videos'] if str(v['ID']) == str(video_id)), None)
+            if not video:
+                logger.warning(f"{Colors.YELLOW}Video not found for ID {video_id}{Colors.END}")
+                return jsonify({'error': 'Video not found'}), 404
+            translated_transcript = video.get('translated_transcript')
+            if not translated_transcript:
+                logger.warning(f"{Colors.YELLOW}No translated_transcript found for video ID {video_id}{Colors.END}")
+                return jsonify({'error': 'No translated transcript available'}), 404
+            logger.info(f"{Colors.GREEN}Returning translated_transcript for video ID {video_id}{Colors.END}")
+            return jsonify(translated_transcript)
+    except Exception as e:
+        logger.error(f"{Colors.RED}Failed to load translated transcript: {str(e)}{Colors.END}")
+        return jsonify({'error': f'Failed to load translated transcript: {str(e)}'}), 500
+
+@app.route('/video-language/<video_id>', methods=['GET'])
+def get_video_language(video_id):
+    logger.info(f"{Colors.CYAN}Language detection requested for video ID {video_id}{Colors.END}")
+    try:
+        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
+            meta = json.load(f)
+            video = next((v for v in meta.get('videos', []) if str(v.get('ID')) == str(video_id)), None)
+            if not video:
+                logger.warning(f"{Colors.YELLOW}Video not found for ID {video_id}. Returning 'eng' as fallback.{Colors.END}")
+                return jsonify({'language': 'eng'})
+            transcript = video.get('transcript', {})
+            transcript_text = transcript.get('text', '')
+            if not transcript_text:
+                logger.warning(f"{Colors.YELLOW}Transcript text missing for video ID {video_id}. Returning 'eng' as fallback.{Colors.END}")
+                return jsonify({'language': 'eng'})
+            logger.info(f"{Colors.GREEN}Transcript loaded from metadata.json for language detection (length: {len(transcript_text)} chars).{Colors.END}")
+    except Exception as e:
+        logger.warning(f"{Colors.YELLOW}Error loading transcript from metadata.json for video ID {video_id}: {str(e)}. Returning 'eng' as fallback.{Colors.END}")
+        return jsonify({'language': 'eng'})
+
+    lang = detect_transcript_language(transcript_text)
+    logger.info(f"{Colors.CYAN}Raw detected language: {lang}{Colors.END}")
+    # Normalize output
+    if lang.startswith('fr'):
+        lang = 'fr'
+    elif lang.startswith('en'):
+        lang = 'eng'
+    logger.info(f"{Colors.GREEN}Normalized detected language for video ID {video_id}: {lang}{Colors.END}")
+    return jsonify({'language': lang})
 
 if __name__ == '__main__':
     # Initialize metadata file if it doesn't exist

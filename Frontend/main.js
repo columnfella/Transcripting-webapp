@@ -1,6 +1,8 @@
 import * as utilities from './utilities.js';
-import { updateProgressBarWithQuery } from './progressBarController.js';
-import {createVideoCard, showNamePrompt, showNotification, videoData, goToDetailedSearch, loadDetailedSearchVideo} from "./utilities.js";
+import { updateProgressBarWithQuery, createContextualMarkers, createIntervalDensityMarkers } from './progressBarController.js';
+import { createVideoCard, showNamePrompt, showNotification, videoData, goToDetailedSearch, loadDetailedSearchVideo, setCurrentChatType, currentChatType } from "./utilities.js";
+import { addMessage, showLoadingMessage } from './chatController.js';
+import { searchInTranslatedChunks } from './utilities.js';
 
 const textBox = document.getElementById("chat-input");
 const startBtn = document.getElementById("startBtn");
@@ -13,8 +15,12 @@ const videoGrid = document.getElementById('videoGrid');
 const previewBtn = document.getElementById('previewBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const dragDropArea = document.getElementById('dragDropArea');
+const chatTypeToggle = document.getElementById('chatTypeToggle');
+const chatHistory = document.getElementById('chatHistory');
+const chatHistoryAlt = document.getElementById('chatHistoryAlt');
 
-let currentLanguage = 'eng';
+let selectedChatType = 'main';
+window.currentLanguage = 'eng'; // Will be updated based on video language when available
 
 console.log("🔍 DEBUG: Main script loaded");
 console.log('[DEBUG] window.location.pathname:', window.location.pathname);
@@ -34,7 +40,7 @@ let loadingOverlay = null;
 // GLOBAL FLAG FOR UPLOAD STATUS
 let isUploading = false;
 
-// ENHANCED LOADING OVERLAY (less invasive)
+// MODERNIZED LOADING OVERLAY WITH ANIMATION
 function showLoadingOverlay() {
     if (!loadingOverlay) {
         loadingOverlay = document.createElement('div');
@@ -43,21 +49,69 @@ function showLoadingOverlay() {
         loadingOverlay.style.left = 0;
         loadingOverlay.style.width = '100vw';
         loadingOverlay.style.height = '100vh';
-        loadingOverlay.style.background = 'rgba(255,255,255,0.35)'; // more transparent
+        loadingOverlay.style.background = 'rgba(15, 23, 42, 0.3)';
+        loadingOverlay.style.backdropFilter = 'blur(8px)';
         loadingOverlay.style.zIndex = 2000;
         loadingOverlay.style.display = 'flex';
         loadingOverlay.style.alignItems = 'center';
         loadingOverlay.style.justifyContent = 'center';
-        loadingOverlay.style.pointerEvents = 'none'; // allow interaction
-        loadingOverlay.innerHTML = '<div style="font-size:1.2rem; color:#1e40af; opacity:0.7;"><i class="fas fa-spinner fa-spin"></i> Loading videos...</div>';
+        loadingOverlay.style.opacity = '0';
+        loadingOverlay.style.transition = 'opacity 0.3s ease';
+        
+        // Create a more attractive loading indicator
+        const loaderContainer = document.createElement('div');
+        loaderContainer.style.background = 'linear-gradient(135deg, #1e40af, #3b82f6)';
+        loaderContainer.style.borderRadius = '16px';
+        loaderContainer.style.padding = '24px 40px';
+        loaderContainer.style.boxShadow = '0 15px 35px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)';
+        loaderContainer.style.display = 'flex';
+        loaderContainer.style.flexDirection = 'column';
+        loaderContainer.style.alignItems = 'center';
+        loaderContainer.style.justifyContent = 'center';
+        loaderContainer.style.gap = '15px';
+        loaderContainer.style.transform = 'translateY(20px)';
+        loaderContainer.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+        loaderContainer.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+        
+        // Spinner icon
+        const spinner = document.createElement('div');
+        spinner.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size:2rem; color:white;"></i>';
+        
+        // Loading text
+        const text = document.createElement('div');
+        text.textContent = 'Loading videos...';
+        text.style.color = 'white';
+        text.style.fontSize = '1.1rem';
+        text.style.fontWeight = '600';
+        text.style.textShadow = '0 1px 2px rgba(0, 0, 0, 0.2)';
+        
+        loaderContainer.appendChild(spinner);
+        loaderContainer.appendChild(text);
+        loadingOverlay.appendChild(loaderContainer);
         document.body.appendChild(loadingOverlay);
+        
+        // Trigger animation
+        setTimeout(() => {
+            loadingOverlay.style.opacity = '1';
+            loaderContainer.style.transform = 'translateY(0)';
+        }, 10);
     }
 }
 
 function hideLoadingOverlay() {
     if (loadingOverlay) {
-        loadingOverlay.remove();
-        loadingOverlay = null;
+        // Fade out animation
+        loadingOverlay.style.opacity = '0';
+        const loaderContainer = loadingOverlay.querySelector('div');
+        if (loaderContainer) {
+            loaderContainer.style.transform = 'translateY(20px)';
+        }
+        
+        // Remove after animation completes
+        setTimeout(() => {
+            loadingOverlay.remove();
+            loadingOverlay = null;
+        }, 300);
     }
 }
 
@@ -92,40 +146,271 @@ async function sendEditVideoTitle(videoId, newTitle) {
     }
 }
 
-function handleSearch() {
-    const query = textBox.value.trim();
-    // Update progress bar with search query (now marker-based)
-    updateProgressBarWithQuery(query);
-    utilities.handleMessageSend(textBox);
-    utilities.clearTextBox(textBox);
-}
-
-function toggleLanguage(selectedLang) {
-    // Remove active class from all buttons
-    frButton.classList.remove('active');
-    engButton.classList.remove('active');
-
-    // Add active class to selected button
-    if (selectedLang === 'fr') {
-        frButton.classList.add('active');
-        currentLanguage = 'fr';
+// Show/hide language toggle based on selected chat type
+function updateLanguageToggleVisibility() {
+    const langToggle = document.getElementById('languageToggle');
+    if (!langToggle) return;
+    if (selectedChatType === 'main') {
+        langToggle.style.display = '';
     } else {
-        engButton.classList.add('active');
-        currentLanguage = 'eng';
+        langToggle.style.display = 'none';
     }
 }
 
+function switchChatType(type) {
+    // Subtle fade animation for chat history switch
+    const oldChatDiv = selectedChatType === 'alt' ? chatHistoryAlt : chatHistory;
+    const newChatDiv = type === 'alt' ? chatHistoryAlt : chatHistory;
+    if (oldChatDiv && newChatDiv && oldChatDiv !== newChatDiv) {
+        oldChatDiv.style.transition = 'opacity 0.3s';
+        oldChatDiv.style.opacity = '0';
+        setTimeout(() => {
+            oldChatDiv.classList.remove('active');
+            newChatDiv.classList.add('active');
+            newChatDiv.style.transition = 'opacity 0.3s';
+            newChatDiv.style.opacity = '0';
+            // Force reflow to apply transition
+            void newChatDiv.offsetWidth;
+            newChatDiv.style.opacity = '1';
+        }, 300);
+    } else {
+        // Fallback: just switch instantly
+        if (type === 'alt') {
+            chatHistory.classList.remove('active');
+            chatHistoryAlt.classList.add('active');
+        } else {
+            chatHistory.classList.add('active');
+            chatHistoryAlt.classList.remove('active');
+        }
+    }
+    selectedChatType = type;
+    // Toggle button active state
+    document.querySelectorAll('.chat-type-btn').forEach(btn => {
+        if (btn.dataset.chat === type) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+    updateLanguageToggleVisibility();
+}
+
+// Modal to show interval text
+function showIntervalModal(interval) {
+    // Remove any existing modal
+    const existing = document.querySelector('.interval-text-modal-backdrop');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.className = 'interval-text-modal-backdrop';
+    modal.style = `position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.75);z-index:4000;display:flex;align-items:center;justify-content:center;`;
+    modal.innerHTML = `
+      <div class="interval-text-modal-content" style="background:#f9fafb;padding:32px 28px 24px 28px;border-radius:16px;min-width:340px;max-width:600px;box-shadow:0 8px 32px rgba(30,64,175,0.18);text-align:left;display:flex;flex-direction:column;align-items:stretch;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+          <span style="color:#2563eb;font-size:1.1rem;font-weight:700;">Interval Text</span>
+          <button class="interval-modal-close" title="Close" style="background:none;border:none;font-size:2rem;line-height:1;color:#64748b;cursor:pointer;">&times;</button>
+        </div>
+        <div style="color:#1e293b;font-size:1.05rem;white-space:pre-line;margin-bottom:18px;">${interval.text || '(No text available for this interval)'}</div>
+        <div style="color:#64748b;font-size:0.98rem;margin-bottom:6px;">Start: <b>${interval.start_time != null ? interval.start_time.toFixed(2) : '?'}</b> s &nbsp; | &nbsp; End: <b>${interval.end_time != null ? interval.end_time.toFixed(2) : '?'}</b> s</div>
+        <div style="color:#64748b;font-size:0.98rem;">Position: <b>${interval.position}</b></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const closeBtn = modal.querySelector('.interval-modal-close');
+    closeBtn.onclick = () => modal.remove();
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+// Update handleSearch to use handleMessageSend for both chat types
+async function handleSearch() {
+    const query = textBox.value.trim();
+    updateProgressBarWithQuery(query);
+    // If contextual chat, handle markers after response
+    if (selectedChatType === 'alt') {
+        const chatHistoryId = 'chatHistoryAlt';
+        const chatContainer = document.getElementById(chatHistoryId);
+        // Add user message
+        addMessage(query, 'user', chatHistoryId);
+        if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+        // Show loading
+        const loading = showLoadingMessage(undefined, chatHistoryId);
+        try {
+            const response = await utilities.sendContextualChatMessage(query, window.currentLanguage || 'eng');
+            loading.stop();
+            loading.element.remove();
+            let responseText = '';
+            let intervals = [];
+            if (typeof response === 'object' && response.answer) {
+                responseText = response.answer;
+                if (Array.isArray(response.source_documents)) {
+                    intervals = response.source_documents.map(doc => ({
+                        start_time: doc.start_time,
+                        end_time: doc.end_time,
+                        position: doc.position,
+                        text: doc.text // include text for modal
+                    }));
+                }
+            } else if (typeof response === 'string') {
+                responseText = response;
+            }
+            addMessage(responseText || 'No response received from the system.', 'system', chatHistoryId);
+            if (intervals.length > 0) {
+                createContextualMarkers(intervals, showIntervalModal);
+            }
+        } catch (error) {
+            if (loading) {
+                loading.stop();
+                loading.element.remove();
+            }
+            addMessage(`Error: ${error.message || 'Unknown error occurred'}`, 'system', chatHistoryId);
+        } finally {
+            if (chatContainer) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }
+        utilities.clearTextBox(textBox);
+        return;
+    }
+    // --- QUERYING MODE: Handle language switch and translation logic ---
+    let transcriptToUse = utilities.detailedTranscriptBundle?.transcript;
+    const selectedLang = window.currentLanguage || 'eng';
+    const videoLang = window.loadedVideoLanguage || 'eng';
+    const videoId = window.detailedSearchVideoId;
+    
+    // Always clear ALL marker types first (not just interval density markers)
+    const progressBar = document.getElementById('progressBar');
+    if (progressBar) {
+        const bar = progressBar.querySelector('.plain-progress-bar');
+        if (bar) {
+            bar.querySelectorAll('.progress-marker, .contextual-marker, .interval-density-marker').forEach(marker => marker.remove());
+        }
+    }
+    
+    // Use a global cache for translated transcripts
+    if (videoId && transcriptToUse && selectedLang !== videoLang) {
+        // Check if we already have a translated transcript for this language
+        const cacheKey = `translatedTranscript_${selectedLang}`;
+        if (!utilities.detailedTranscriptBundle[cacheKey]) {
+            // Need to translate transcript to selected language (first time only)
+            console.log(`[Querying] Translating transcript from ${videoLang} to ${selectedLang}...`);
+            const translated = await utilities.translateTranscript(videoId, selectedLang);
+            if (translated) {
+                console.log('[Querying] Translated transcript:', translated);
+                utilities.detailedTranscriptBundle[cacheKey] = translated;
+                transcriptToUse = translated;
+                utilities.detailedTranscriptBundle.transcript = translated;
+                console.log('[Querying] Using translated transcript for search.');
+            } else {
+                console.warn('[Querying] Failed to translate transcript, falling back to original.');
+                showNotification('Could not translate transcript. Using original language.', 'warning');
+            }
+        } else {
+            // Use cached translation
+            transcriptToUse = utilities.detailedTranscriptBundle[cacheKey];
+            utilities.detailedTranscriptBundle.transcript = transcriptToUse;
+            console.log(`[Querying] Using cached translated transcript for ${selectedLang}.`);
+        }
+        // --- Interval marker logic for translated transcript ---
+        // Check if we're dealing with a translated transcript (30-second chunks format)
+        const isTranslatedTranscript = transcriptToUse && transcriptToUse.words && 
+                                       Array.isArray(transcriptToUse.words) && 
+                                       transcriptToUse.words.length > 0 && 
+                                       'start' in transcriptToUse.words[0] && 
+                                       'end' in transcriptToUse.words[0] && 
+                                       'text' in transcriptToUse.words[0];
+                                       
+        if (isTranslatedTranscript) {
+            const video = utilities.detailedTranscriptBundle?.video;
+            const videoDuration = video?.duration || (video?.duration_formatted ? (
+                typeof video.duration_formatted === 'string' && video.duration_formatted.includes(':')
+                    ? video.duration_formatted.split(':').reduce((acc, t) => 60 * acc + +t, 0)
+                    : parseFloat(video.duration_formatted)
+            ) : 0);
+            
+            // Always clear existing interval markers first
+            const progressBar = document.getElementById('progressBar');
+            if (progressBar) {
+                const bar = progressBar.querySelector('.plain-progress-bar');
+                if (bar) {
+                    bar.querySelectorAll('.progress-marker, .contextual-marker, .interval-density-marker').forEach(marker => marker.remove());
+                }
+            }
+            
+            const intervals = searchInTranslatedChunks(transcriptToUse.words, textBox.value.trim());
+            
+            if (intervals.length > 0) {
+                // Store the current query in the intervals for highlighting in the modal
+                intervals.forEach(interval => {
+                    interval.query = textBox.value.trim();
+                });
+                createIntervalDensityMarkers(intervals, videoDuration);
+            }
+            
+            // Continue with the regular search to show the message in chat
+        }
+    } else if (videoId && selectedLang === videoLang && utilities.detailedTranscriptBundle?.originalTranscript) {
+        // Restore the original transcript if switching back to the matchable language
+        transcriptToUse = utilities.detailedTranscriptBundle.originalTranscript;
+        utilities.detailedTranscriptBundle.transcript = utilities.detailedTranscriptBundle.originalTranscript;
+        console.log('[Querying] Restored original transcript for search.');
+        // Use the original marker logic
+        updateProgressBarWithQuery(textBox.value.trim(), transcriptToUse);
+    } else {
+        // Use the original marker logic
+        updateProgressBarWithQuery(textBox.value.trim(), transcriptToUse);
+    }
+    await utilities.handleMessageSend(textBox, true, selectedChatType, transcriptToUse);
+    utilities.clearTextBox(textBox);
+}
+
 function clearChatHistory() {
-    const chatHistory = document.getElementById('chatHistory');
-    if (chatHistory) chatHistory.innerHTML = '';
+    const isAlt = selectedChatType === 'alt';
+    const chatDiv = isAlt ? chatHistoryAlt : chatHistory;
+    if (!chatDiv) {
+        utilities.showNotification('Chat history is already empty.', 'warning');
+        return;
+    }
+    // Check for actual chat messages
+    const hasMessages = chatDiv.querySelector('.chat-message');
+    if (!hasMessages) {
+        utilities.showNotification('Chat history is already empty.', 'warning');
+        return;
+    }
+    const message = 'Are you sure you want to clear the chat history?';
+    utilities.showConfirmDialog(message, 'Clear', 'Cancel').then(confirmed => {
+        if (!confirmed) return;
+        // Fade out animation
+        chatDiv.style.transition = 'opacity 0.35s';
+        chatDiv.style.opacity = '0';
+        setTimeout(() => {
+            chatDiv.innerHTML = '';
+            chatDiv.style.opacity = '1';
+        }, 350);
+    });
 }
 
 function clearProgressBarMarkers() {
     const progressBar = document.getElementById('progressBar');
-    if (progressBar) {
-        const bar = progressBar.querySelector('.plain-progress-bar');
-        if (bar) bar.querySelectorAll('.progress-marker').forEach(marker => marker.remove());
+    if (!progressBar) return;
+    // Check for markers (plain-progress-bar or progress-marker or contextual-marker or interval-density-marker)
+    const bar = progressBar.querySelector('.plain-progress-bar');
+    const markers = [
+        ...(bar ? Array.from(bar.querySelectorAll('.progress-marker')) : Array.from(progressBar.querySelectorAll('.progress-marker'))),
+        ...(bar ? Array.from(bar.querySelectorAll('.contextual-marker')) : Array.from(progressBar.querySelectorAll('.contextual-marker'))),
+        ...(bar ? Array.from(bar.querySelectorAll('.interval-density-marker')) : Array.from(progressBar.querySelectorAll('.interval-density-marker')))
+    ];
+    if (!markers || markers.length === 0) {
+        utilities.showNotification('Progress bar is already empty.', 'warning');
+        return;
     }
+    const message = 'Are you sure you want to clear the progress bar?';
+    utilities.showConfirmDialog(message, 'Clear', 'Cancel').then(confirmed => {
+        if (!confirmed) return;
+        // Animate markers fade out
+        markers.forEach(marker => {
+            marker.style.transition = 'opacity 0.35s';
+            marker.style.opacity = '0';
+        });
+        setTimeout(() => {
+            markers.forEach(marker => marker.remove());
+        }, 350);
+    });
 }
 
 function init() {
@@ -140,8 +425,39 @@ function init() {
         engButton: !!engButton,
         videoGrid: !!videoGrid,
         previewBtn: !!previewBtn,
-        downloadBtn: !!downloadBtn
+        downloadBtn: !!downloadBtn,
+        chatTypeToggle: !!chatTypeToggle,
+        chatHistory: !!chatHistory,
+        chatHistoryAlt: !!chatHistoryAlt
     });
+
+    // Initialize chat history visibility
+    if (chatHistory && chatHistoryAlt) {
+        chatHistory.classList.add('active');
+        chatHistoryAlt.classList.remove('active');
+    }
+
+    // Add event listeners for chat type toggle buttons
+    if (chatTypeToggle) {
+        const chatTypeBtns = chatTypeToggle.querySelectorAll('.chat-type-btn');
+        chatTypeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                switchChatType(btn.dataset.chat);
+            });
+        });
+    }
+
+    // Add event listeners for chat action buttons
+    const clearChatBtn = document.getElementById('clearChatBtn');
+    const clearProgressBtn = document.getElementById('clearProgressBtn');
+    
+    if (clearChatBtn) {
+        clearChatBtn.addEventListener('click', clearChatHistory);
+    }
+    
+    if (clearProgressBtn) {
+        clearProgressBtn.addEventListener('click', clearProgressBarMarkers);
+    }
 
     if (uploadBtn) {
         uploadBtn.addEventListener("click", (e) => {
@@ -166,11 +482,6 @@ function init() {
                 handleSearch();
             }
         });
-    }
-
-    if (frButton && engButton) {
-        frButton.addEventListener('click', () => toggleLanguage('fr'));
-        engButton.addEventListener('click', () => toggleLanguage('eng'));
     }
 
     // FETCH VIDEO METADATA ON STORAGE PAGE LOAD
@@ -297,10 +608,10 @@ function init() {
     if (window.location.pathname.includes('transcripting.html')) {
         console.log('[Transcripting] Page loaded, setting up video loading...');
         const videoId = localStorage.getItem('detailedSearchVideoId');
-        console.log('[Transcripting] Loaded from localStorage, videoId:', videoId);
+        console.log('[Transcripting] Loaded videoId from localStorage:', videoId);
         if (videoId) {
             console.log('[Transcripting] Loading video with ID:', videoId);
-            utilities.loadDetailedSearchVideo(videoId).then(() => {
+            utilities.loadDetailedSearchVideo(videoId).then(async () => {
                 // Set global variables for use elsewhere
                 window.detailedSearchVideoId = videoId;
                 window.detailedSearchVideo = window.detailedSearchVideo || null;
@@ -310,6 +621,36 @@ function init() {
                     detailedSearchVideo: window.detailedSearchVideo,
                     detailedSearchTranscript: window.detailedSearchTranscript
                 });
+                // Send transcript to contextual server if available
+                if (window.detailedSearchTranscript) {
+                    utilities.sendTranscriptionToContextualServer(window.detailedSearchTranscript);
+                    console.log('[Transcripting] Sent transcript to contextual server:', window.detailedSearchTranscript);
+                }
+                // Fetch and log the language of the video transcript
+                window.loadedVideoLanguage = await utilities.fetchVideoLanguage(videoId);
+                console.log('[Transcripting] Detected video transcript language:', window.loadedVideoLanguage);
+                
+                // Set current language to match video language
+                window.currentLanguage = window.loadedVideoLanguage || 'eng';
+                console.log('[Transcripting] Setting current language to:', window.currentLanguage);
+                
+                // Update language toggle UI
+                const engBtn = document.getElementById('eng');
+                const frBtn = document.getElementById('fr');
+                if (engBtn && frBtn) {
+                    if (window.currentLanguage === 'fr') {
+                        engBtn.classList.remove('active');
+                        frBtn.classList.add('active');
+                    } else {
+                        engBtn.classList.add('active');
+                        frBtn.classList.remove('active');
+                    }
+                }
+                
+                // Store the original transcript for language switching
+                if (utilities.detailedTranscriptBundle && utilities.detailedTranscriptBundle.transcript) {
+                    utilities.detailedTranscriptBundle.originalTranscript = JSON.parse(JSON.stringify(utilities.detailedTranscriptBundle.transcript));
+                }
             });
         } else {
             console.warn('[Transcripting] No videoId found in localStorage.');
@@ -325,14 +666,28 @@ function init() {
             clearProgressBtn.addEventListener('click', clearProgressBarMarkers);
         }
     }
+
+    // Add language toggle event listeners
+    const engBtn = document.getElementById('eng');
+    const frBtn = document.getElementById('fr');
+    if (engBtn && frBtn) {
+        engBtn.addEventListener('click', () => {
+            window.currentLanguage = 'eng';
+            engBtn.classList.add('active');
+            frBtn.classList.remove('active');
+        });
+        frBtn.addEventListener('click', () => {
+            window.currentLanguage = 'fr';
+            frBtn.classList.add('active');
+            engBtn.classList.remove('active');
+        });
+    }
+
+    updateLanguageToggleVisibility();
 }
 
 function getCurrentLanguage() {
-    return currentLanguage;
-}
-
-if (frButton && engButton) {
-    toggleLanguage('eng');
+    return window.currentLanguage || 'eng';
 }
 
 function showDragDropArea() {
