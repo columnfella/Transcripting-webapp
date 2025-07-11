@@ -55,7 +55,7 @@ A comprehensive web application for uploading, processing, and analyzing videos 
 - **Frontend**: HTML5, CSS3, JavaScript  
 - **Backend**: Python, Flask  
 - **Media Processing**: Video manipulation libraries  
-- **Text Processing**: Natural Language Processing for transcriptions  
+- **Text Processing**: Whisper-large-v3-turbo with Grok API 
 - **PDF Generation**: Dynamic PDF creation of transcripts  
 
 ---
